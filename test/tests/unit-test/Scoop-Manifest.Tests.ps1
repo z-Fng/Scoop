@@ -1,6 +1,6 @@
 BeforeAll {
-    . "$PSScriptRoot\..\lib\json.ps1"
-    . "$PSScriptRoot\..\lib\manifest.ps1"
+    . "$PSScriptRoot\..\..\..\lib\json.ps1"
+    . "$PSScriptRoot\..\..\..\lib\manifest.ps1"
 }
 
 Describe 'JSON parse and beautify' -Tag 'Scoop' {

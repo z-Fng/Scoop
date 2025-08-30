@@ -1,7 +1,7 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
-    . "$PSScriptRoot\..\lib\core.ps1"
-    . "$PSScriptRoot\..\lib\commands.ps1"
+    . "$PSScriptRoot\..\..\..\lib\core.ps1"
+    . "$PSScriptRoot\..\..\..\lib\commands.ps1"
 }
 
 Describe 'Manipulate Alias' -Tag 'Scoop' {

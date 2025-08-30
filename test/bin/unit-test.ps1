@@ -3,7 +3,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.2.0' }
 #Requires -Modules @{ ModuleName = 'PSScriptAnalyzer'; ModuleVersion = '1.17.1' }
 param(
-    [String] $TestPath = (Convert-Path "$PSScriptRoot\..")
+    [String] $TestPath = (Convert-Path "$PSScriptRoot\..\tests\unit-test")
 )
 
 $pesterConfig = New-PesterConfiguration -Hashtable @{

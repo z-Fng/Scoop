@@ -1,4 +1,4 @@
-name: Scoop Core CI Tests
+name: Scoop Core Unit Tests
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
           shell: powershell
       - name: Test Scoop Core
         shell: powershell
-        run: ./test/bin/test.ps1
+        run: ./test/bin/unit-test.ps1
   test_pwsh:
     name: PowerShell
     runs-on: windows-latest
@@ -36,4 +36,4 @@ jobs:
           shell: pwsh
       - name: Test Scoop Core
         shell: pwsh
-        run: ./test/bin/test.ps1
+        run: ./test/bin/unit-test.ps1

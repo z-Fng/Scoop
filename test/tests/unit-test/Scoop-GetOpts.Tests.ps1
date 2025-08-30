@@ -1,6 +1,6 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
-    . "$PSScriptRoot\..\lib\getopt.ps1"
+    . "$PSScriptRoot\..\..\..\lib\getopt.ps1"
 }
 
 Describe 'getopt' -Tag 'Scoop' {

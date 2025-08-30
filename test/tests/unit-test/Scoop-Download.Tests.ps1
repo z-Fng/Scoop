@@ -1,7 +1,7 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
-    . "$PSScriptRoot\..\lib\core.ps1"
-    . "$PSScriptRoot\..\lib\download.ps1"
+    . "$PSScriptRoot\..\..\..\lib\core.ps1"
+    . "$PSScriptRoot\..\..\..\lib\download.ps1"
 }
 
 Describe 'Test-Aria2Enabled' -Tag 'Scoop' {

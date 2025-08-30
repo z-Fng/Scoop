@@ -1,6 +1,6 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
-    . "$PSScriptRoot\..\lib\versions.ps1"
+    . "$PSScriptRoot\..\..\..\lib\versions.ps1"
 }
 
 Describe 'versions comparison' -Tag 'Scoop' {

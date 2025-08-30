@@ -1,0 +1,23 @@
+name: Integration Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test_powershell:
+    name: Integration Test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          ref: test-hook-vars
+      - name: Init Test Suite
+        uses: potatoqualitee/psmodulecache@main
+        with:
+          modules-to-cache: BuildHelpers
+          shell: powershell
+      - name: Test Scoop Integration
+        shell: powershell
+        run: ./test/bin/integration-test.ps1
