@@ -7,7 +7,7 @@
 
 ### Bug Fixes
 
-- **scoop-download:** Fix function `nightly_version` not defined error ([#6386](https://github.com/ScoopInstaller/Scoop/issues/6386))
+- **dependency:** Fix missing dot-sourcing dependency ([#6386](https://github.com/ScoopInstaller/Scoop/issues/6386), [#6540](https://github.com/ScoopInstaller/Scoop/issues/6540))
 - **scoop-uninstall:** Correct `-Global` Switch ([#6454](https://github.com/ScoopInstaller/Scoop/issues/6454))
 - **scoop-update:** Force sync tags w/ remote branch while scoop update ([#6439](https://github.com/ScoopInstaller/Scoop/issues/6439))
 - **autoupdate:** Use origin URL to handle URLs with fragment in GitHub mode ([#6455](https://github.com/ScoopInstaller/Scoop/issues/6455))
@@ -21,6 +21,10 @@
 ### Code Refactoring
 
 - **output:** Replace raw prints with functions for standardized output ([#6449](https://github.com/ScoopInstaller/Scoop/issues/6449))
+
+### Tests
+
+- **static-analysis:** Add dot-sourcing dependency check ([#6540](https://github.com/ScoopInstaller/Scoop/issues/6540))
 
 ## [v0.5.3](https://github.com/ScoopInstaller/Scoop/compare/v0.5.2...v0.5.3) - 2025-08-11
 

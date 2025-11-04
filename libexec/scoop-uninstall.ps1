@@ -13,6 +13,7 @@
 . "$PSScriptRoot\..\lib\shortcuts.ps1"
 . "$PSScriptRoot\..\lib\psmodules.ps1"
 . "$PSScriptRoot\..\lib\versions.ps1" # 'Select-CurrentVersion'
+. "$PSScriptRoot\..\lib\download.ps1"
 
 # options
 $opt, $apps, $err = getopt $args 'gp' 'global', 'purge'

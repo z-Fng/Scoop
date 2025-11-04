@@ -5,6 +5,10 @@ Set-StrictMode -Off
 . "$PSScriptRoot\..\lib\buckets.ps1"
 . "$PSScriptRoot\..\lib\commands.ps1"
 . "$PSScriptRoot\..\lib\help.ps1"
+. "$PSScriptRoot\..\lib\versions.ps1"
+. "$PSScriptRoot\..\lib\manifest.ps1"
+. "$PSScriptRoot\..\lib\system.ps1"
+. "$PSScriptRoot\..\lib\database.ps1"
 
 $subCommand = $Args[0]
 
