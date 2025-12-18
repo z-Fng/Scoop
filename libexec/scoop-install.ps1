@@ -40,6 +40,7 @@
 . "$PSScriptRoot\..\lib\psmodules.ps1"
 . "$PSScriptRoot\..\lib\versions.ps1"
 . "$PSScriptRoot\..\lib\depends.ps1"
+. "$PSScriptRoot\..\lib\update.ps1"
 if (get_config USE_SQLITE_CACHE) {
     . "$PSScriptRoot\..\lib\database.ps1"
 }
@@ -140,14 +141,45 @@ $skip | Where-Object { $explicit_apps -contains $_ } | ForEach-Object {
     warn "'$app' ($version) is already installed. Skipping."
 }
 
+$outdated_helpers = $apps | ForEach-Object {
+    $null, $manifest, $null, $null = Get-Manifest $_
+
+    if (-not $manifest) {
+        return
+    }
+
+    [PSCustomObject]@{
+        Manifest     = $manifest
+        Architecture = $architecture
+    }
+} | Get-OutdatedHelper
+
 $suggested = @{ };
 if ((Test-Aria2Enabled) -and (get_config 'aria2-warning-enabled' $true)) {
     warn "Scoop uses 'aria2c' for multi-connection downloads."
     warn "Should it cause issues, run 'scoop config aria2-enabled false' to disable it."
     warn "To disable this warning, run 'scoop config aria2-warning-enabled false'."
 }
+
+# Update extraction tools ahead of installs/updates
 $failed = @{}
-$apps | ForEach-Object { install_app $_ $architecture $global $suggested $failed $use_cache $check_hash }
+foreach ($outdated_helper in $outdated_helpers) {
+    try {
+        update_app $outdated_helper.App $outdated_helper.Global $false $false $independent $suggested $failed $use_cache $check_hash
+    } catch {
+        Write-Host -f darkred $_
+        $app_key = if ($outdated_helper.Global) { "$($outdated_helper.App) (global)" } else { $outdated_helper.App }
+        $failed[$app_key] = $_.Exception.Message
+    }
+}
+foreach ($app in $apps) {
+    try {
+        install_app $app $architecture $global $suggested $failed $use_cache $check_hash
+    } catch {
+        Write-Host -f darkred $_
+        $failed[(parse_app $app)[0]] = $_.Exception.Message
+    }
+}
 
 show_suggestions $suggested
 $failed_count = show_failed_apps $failed

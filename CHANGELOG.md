@@ -2,6 +2,7 @@
 
 ### Features
 
+- **scoop-install|update:** Update extraction tools ahead of installs/updates ([#6572](https://github.com/ScoopInstaller/Scoop/issues/6572))
 - **shim:** Rework the shim system around architecture-native bodies ([#6783](https://github.com/ScoopInstaller/Scoop/issues/6783), [#6799](https://github.com/ScoopInstaller/Scoop/issues/6799))
 
 ### Bug Fixes

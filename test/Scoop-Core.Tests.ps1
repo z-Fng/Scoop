@@ -36,6 +36,20 @@ Describe 'Get-AppFilePath' -Tag 'Scoop' {
     }
 }
 
+Describe 'Get-HelperCandidate' -Tag 'Scoop' {
+    It 'should return helper app candidates in priority order' {
+        (Get-HelperCandidate -Helper Innounp).App | Should-BeCollection @('innounp-unicode', 'innounp')
+        (Get-HelperCandidate -Helper Dark).App | Should-BeCollection @('dark', 'wixtoolset')
+    }
+
+    It 'should include external command fallback for Git' {
+        $candidates = @(Get-HelperCandidate -Helper Git)
+        $candidates[0].App | Should-Be 'git'
+        $candidates[0].File | Should-Be 'cmd\git.exe'
+        $candidates[-1].Command | Should-Be 'git'
+    }
+}
+
 Describe 'Get-HelperPath' -Tag 'Scoop' {
     BeforeAll {
         $working_dir = setup_working 'is_directory'
@@ -53,6 +67,12 @@ Describe 'Get-HelperPath' -Tag 'Scoop' {
     It 'should throw if parameter is wrong or missing' {
         { Get-HelperPath -Helper } | Should-Throw
         { Get-HelperPath -Helper Wrong } | Should-Throw
+    }
+
+    It 'should use the first installed helper candidate' {
+        Mock Get-AppFilePath { $null }
+        Mock Get-AppFilePath { 'innounp\current\innounp.exe' } -ParameterFilter { $App -eq 'innounp' -and $File -eq 'innounp.exe' }
+        Get-HelperPath -Helper Innounp | Should-Be 'innounp\current\innounp.exe'
     }
 
     Context 'Git' {
@@ -79,6 +99,23 @@ Describe 'Get-HelperPath' -Tag 'Scoop' {
     }
 }
 
+Describe 'Get-InstalledHelperApp' -Tag 'Scoop' {
+    It 'should return the installed app that provides the helper' {
+        Mock Get-AppFilePath { $null }
+        Mock Get-AppFilePath { 'wixtoolset\current\wix.exe' } -ParameterFilter { $App -eq 'wixtoolset' -and $File -eq 'wix.exe' }
+        Get-InstalledHelperApp -Helper Dark | Should -Be 'wixtoolset'
+    }
+
+    It 'should return null if no helper candidate is installed' {
+        Mock Get-AppFilePath { $null }
+        Get-InstalledHelperApp -Helper Dark | Should -BeNullOrEmpty
+    }
+
+    It 'should throw if parameter is wrong or missing' {
+        { Get-InstalledHelperApp -Helper } | Should -Throw
+        { Get-InstalledHelperApp -Helper Wrong } | Should -Throw
+    }
+}
 
 Describe 'Test-HelperInstalled' -Tag 'Scoop' {
     It 'should return true if program is installed' {

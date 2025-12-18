@@ -5,6 +5,7 @@ BeforeAll {
     . "$PSScriptRoot\..\lib\buckets.ps1"
     . "$PSScriptRoot\..\lib\install.ps1"
     . "$PSScriptRoot\..\lib\manifest.ps1"
+    . "$PSScriptRoot\..\lib\versions.ps1"
 }
 
 Describe 'Package Dependencies' -Tag 'Scoop' {
@@ -58,6 +59,155 @@ Describe 'Package Dependencies' -Tag 'Scoop' {
             Mock Test-HelperInstalled { $true }-ParameterFilter { $Helper -eq 'Lessmsi' }
             Get-InstallationHelper -Manifest $manifest1 -Architecture '32bit' | Should-BeNull
             Get-InstallationHelper -Manifest $manifest2 -Architecture '32bit' | Should-BeCollection @('7zip')
+        }
+    }
+
+    Context 'Outdated helpers' {
+        BeforeEach {
+            Mock Get-InstallationHelper { @() }
+            Mock Get-InstalledHelperApp { $null }
+            Mock installed { $false }
+            Mock is_admin { $false }
+            Mock app_status { [PSCustomObject]@{ installed = $true; outdated = $true; hold = $false; version = '1.0'; latest_version = '2.0' } }
+            Mock Select-CurrentVersion { '1.0' }
+            Mock install_info { [PSCustomObject]@{ bucket = 'main'; url = $null; architecture = '64bit' } }
+            Mock manifest { $null }
+            Mock warn { }
+        }
+
+        It 'Returns outdated helpers required by the manifest' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper)
+
+            $result.App | Should-BeCollection @('lessmsi')
+            $result[0].Global | Should-BeFalse
+            $result[0].Status.version | Should-Be '1.0'
+        }
+
+        It 'Resolves the manifest from an installed app name and global flag' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'resolved-manifest' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock manifest { @{ name = 'resolved-manifest' } } -ParameterFilter { $app -eq 'app' }
+
+            $result = @([PSCustomObject]@{ App = 'app'; Global = $false } | Get-OutdatedHelper)
+
+            $result.App | Should-BeCollection @('lessmsi')
+            Should-Invoke -CommandName Select-CurrentVersion -Times 1 -ParameterFilter { $AppName -eq 'app' -and $Global -eq $false }
+            Should-Invoke -CommandName install_info -Times 1 -ParameterFilter { $app -eq 'app' -and $version -eq '1.0' -and $global -eq $false }
+        }
+
+        It 'Walks helpers required by helpers' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -eq 'lessmsi' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+            Mock manifest { @{ name = 'lessmsi' } } -ParameterFilter { $app -eq 'lessmsi' }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper)
+
+            # 'lessmsi' requires '7zip', so '7zip' has to be updated first
+            $result.App | Should-BeCollection @('7zip', 'lessmsi')
+        }
+
+        It 'Keeps discovery order and warns on a circular helper dependency' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -eq 'lessmsi' }
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq '7zip' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+            Mock manifest { @{ name = 'lessmsi' } } -ParameterFilter { $app -eq 'lessmsi' }
+            Mock manifest { @{ name = '7zip' } } -ParameterFilter { $app -eq '7zip' }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper)
+
+            $result.App | Should-BeCollection @('lessmsi', '7zip')
+            Should-Invoke -CommandName warn -Times 1 -ParameterFilter { $msg -like '*Circular dependency between extraction tools*' }
+        }
+
+        It 'Does not return a helper twice when several manifests need it' {
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -in @('app1', 'app2') }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+
+            $result = @(@(
+                    [PSCustomObject]@{ Manifest = @{ name = 'app1' }; Architecture = '64bit' }
+                    [PSCustomObject]@{ Manifest = @{ name = 'app2' }; Architecture = '64bit' }
+                ) | Get-OutdatedHelper)
+
+            $result.App | Should-BeCollection @('7zip')
+        }
+
+        It 'Does not force up-to-date helpers that are only discovered from other apps' {
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+            Mock manifest { @{ name = 'app' } } -ParameterFilter { $app -eq 'app' }
+            Mock app_status { [PSCustomObject]@{ installed = $true; outdated = $false; hold = $false; version = '2.0'; latest_version = '2.0' } }
+
+            $outdated = @([PSCustomObject]@{ App = 'app'; Global = $false })
+
+            @($outdated | Get-OutdatedHelper -Force) | Should-BeCollection -Count 0
+        }
+
+        It 'Keeps the force flag for an up-to-date helper that is already in the update list' {
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+            Mock manifest { @{ name = 'app' } } -ParameterFilter { $app -eq 'app' }
+            Mock app_status { [PSCustomObject]@{ installed = $true; outdated = $false; hold = $false; version = '2.0'; latest_version = '2.0' } }
+
+            $outdated = @(
+                [PSCustomObject]@{ App = 'app'; Global = $false }
+                [PSCustomObject]@{ App = '7zip'; Global = $false }
+            )
+            $result = @($outdated | Get-OutdatedHelper -Force)
+
+            $result.App | Should-BeCollection @('7zip')
+            $result[0].Force | Should-BeTrue
+        }
+
+        It 'Does not force helpers that are only outdated' {
+            Mock Get-InstallationHelper { @('7zip') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { '7zip' } -ParameterFilter { $Helper -eq '7zip' }
+            Mock manifest { @{ name = 'app' } } -ParameterFilter { $app -eq 'app' }
+
+            $outdated = @([PSCustomObject]@{ App = 'app'; Global = $false })
+            $result = @($outdated | Get-OutdatedHelper -Force)
+
+            $result.App | Should-BeCollection @('7zip')
+            $result[0].Force | Should-BeFalse
+        }
+
+        It 'Skips held helpers and warns' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock app_status { [PSCustomObject]@{ installed = $true; outdated = $true; hold = $true; version = '1.0'; latest_version = '2.0' } }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper)
+
+            $result | Should-BeCollection -Count 0
+            Should-Invoke -CommandName warn -Times 1 -ParameterFilter { $msg -like '*because it is held*' }
+        }
+
+        It 'Skips globally installed helpers without admin rights and warns' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock installed { $true } -ParameterFilter { $app -eq 'lessmsi' -and $global -eq $true }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper)
+
+            $result | Should-BeCollection -Count 0
+            Should-Invoke -CommandName warn -Times 1 -ParameterFilter { $msg -like '*requires admin rights*' }
+        }
+
+        It 'Does not warn about skipped helpers with -Quiet' {
+            Mock Get-InstallationHelper { @('lessmsi') } -ParameterFilter { $Manifest.name -eq 'app' }
+            Mock Get-InstalledHelperApp { 'lessmsi' } -ParameterFilter { $Helper -eq 'lessmsi' }
+            Mock app_status { [PSCustomObject]@{ installed = $true; outdated = $true; hold = $true; version = '1.0'; latest_version = '2.0' } }
+
+            $result = @([PSCustomObject]@{ Manifest = @{ name = 'app' }; Architecture = '64bit' } | Get-OutdatedHelper -Quiet)
+
+            $result | Should-BeCollection -Count 0
+            Should-Invoke -CommandName warn -Times 0
         }
     }
 

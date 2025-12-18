@@ -103,9 +103,14 @@ if (-not ($apps -or $all)) {
             $is_pin = $force -and !$pin.bucket -and ($pin.url -eq (usermanifest $app))
             if ($status.installed -and ($force -or $status.outdated)) {
                 if (!$status.hold) {
-                    $outdated += applist $app $global
                     $latest = if ($is_pin) { 'HEAD (forced)' } else { $status.latest_version }
-                    Write-Host -f yellow ("$app`: $($status.version) -> $latest{0}" -f ('', ' (global)')[$global])
+                    $outdated += [PSCustomObject]@{
+                        App     = $app
+                        Global  = $global
+                        Force   = $force
+                        Version = $status.version
+                        Latest  = $latest
+                    }
                 } else {
                     warn "'$app' is held to version $($status.version)"
                 }
@@ -117,6 +122,26 @@ if (-not ($apps -or $all)) {
                     info 'Please reinstall it or fix the manifest.'
                 }
             }
+        }
+
+        # Update extraction tools ahead of installs/updates
+        # Remember the display values of apps that are already in the update list,
+        # so helpers replacing their entries keep the pinned/forced label.
+        $explicit_outdated = @{}
+        $outdated | ForEach-Object { $explicit_outdated[('{0}|{1}' -f $_.App, $_.Global)] = $_ }
+
+        $outdated_helpers = @($outdated | Get-OutdatedHelper -Force:$force -Quiet:$quiet)
+
+        $helper_keys = @($outdated_helpers | ForEach-Object { '{0}|{1}' -f $_.App, $_.Global })
+        $outdated = @($outdated | Where-Object { ('{0}|{1}' -f $_.App, $_.Global) -notin $helper_keys })
+        $outdated = @($outdated_helpers) + $outdated
+
+        # Print in the order the apps will be updated (helpers first)
+        $outdated | ForEach-Object {
+            $explicit = $explicit_outdated[('{0}|{1}' -f $_.App, $_.Global)]
+            $version = if ($explicit) { $explicit.Version } else { $_.Status.version }
+            $latest = if ($explicit) { $explicit.Latest } else { $_.Status.latest_version }
+            Write-Host -f yellow ("$($_.App)`: $version -> $latest{0}" -f ('', ' (global)')[$_.Global])
         }
 
         if ($outdated -and ((Test-Aria2Enabled) -and (get_config 'aria2-warning-enabled' $true))) {
@@ -134,8 +159,16 @@ if (-not ($apps -or $all)) {
     }
 
     $suggested = @{}
-    # $outdated is a list of ($app, $global) tuples
-    $outdated | ForEach-Object { update_app @_ $force $quiet $independent $suggested $failed $use_cache $check_hash }
+    # $outdated is a list of ($app, $global, $force) tuples
+    foreach ($outdated_app in $outdated) {
+        try {
+            update_app $outdated_app.App $outdated_app.Global ($outdated_app.Force -eq $true) $quiet $independent $suggested $failed $use_cache $check_hash
+        } catch {
+            Write-Host -f darkred $_
+            $app_key = if ($outdated_app.Global) { "$($outdated_app.App) (global)" } else { $outdated_app.App }
+            $failed[$app_key] = $_.Exception.Message
+        }
+    }
 
     show_suggestions $suggested
     $failed_count = show_failed_apps $failed 'update'

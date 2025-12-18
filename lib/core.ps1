@@ -430,6 +430,37 @@ function Test-GitAvailable {
     return [Boolean](Get-HelperPath -Helper Git)
 }
 
+function Get-HelperCandidate {
+    [CmdletBinding()]
+    [OutputType([Object[]])]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateSet('Git', '7zip', 'Lessmsi', 'Innounp', 'Dark', 'Aria2')]
+        [String]
+        $Helper
+    )
+
+    process {
+        switch ($Helper) {
+            'Git' {
+                [PSCustomObject]@{ App = 'git'; File = 'cmd\git.exe'; Command = $null }
+                [PSCustomObject]@{ App = $null; File = $null; Command = 'git' }
+            }
+            '7zip' { [PSCustomObject]@{ App = '7zip'; File = '7z.exe'; Command = $null } }
+            'Lessmsi' { [PSCustomObject]@{ App = 'lessmsi'; File = 'lessmsi.exe'; Command = $null } }
+            'Innounp' {
+                [PSCustomObject]@{ App = 'innounp-unicode'; File = 'innounp.exe'; Command = $null }
+                [PSCustomObject]@{ App = 'innounp'; File = 'innounp.exe'; Command = $null }
+            }
+            'Dark' {
+                [PSCustomObject]@{ App = 'dark'; File = 'dark.exe'; Command = $null }
+                [PSCustomObject]@{ App = 'wixtoolset'; File = 'wix.exe'; Command = $null }
+            }
+            'Aria2' { [PSCustomObject]@{ App = 'aria2'; File = 'aria2c.exe'; Command = $null } }
+        }
+    }
+}
+
 function Get-HelperPath {
     [CmdletBinding()]
     [OutputType([String])]
@@ -439,37 +470,48 @@ function Get-HelperPath {
         [String]
         $Helper
     )
-    begin {
-        $HelperPath = $null
-    }
     process {
-        switch ($Helper) {
-            'Git' {
-                $internalgit = Get-AppFilePath 'git' 'cmd\git.exe'
-                if ($internalgit) {
-                    $HelperPath = $internalgit
-                } else {
-                    $HelperPath = (Get-Command git -CommandType Application -TotalCount 1 -ErrorAction Ignore).Source
-                }
+        $HelperPath = $null
+        foreach ($candidate in Get-HelperCandidate -Helper $Helper) {
+            if ($candidate.App) {
+                $HelperPath = Get-AppFilePath $candidate.App $candidate.File
+            } elseif ($candidate.Command) {
+                $HelperPath = (Get-Command $candidate.Command -CommandType Application -TotalCount 1 -ErrorAction Ignore).Source
             }
-            '7zip' { $HelperPath = Get-AppFilePath '7zip' '7z.exe' }
-            'Lessmsi' { $HelperPath = Get-AppFilePath 'lessmsi' 'lessmsi.exe' }
-            'Innounp' {
-                $HelperPath = Get-AppFilePath 'innounp-unicode' 'innounp.exe'
-                if ([String]::IsNullOrEmpty($HelperPath)) {
-                    $HelperPath = Get-AppFilePath 'innounp' 'innounp.exe'
-                }
+
+            if (![String]::IsNullOrEmpty($HelperPath)) {
+                break
             }
-            'Dark' {
-                $HelperPath = Get-AppFilePath 'dark' 'dark.exe'
-                if ([String]::IsNullOrEmpty($HelperPath)) {
-                    $HelperPath = Get-AppFilePath 'wixtoolset' 'wix.exe'
-                }
-            }
-            'Aria2' { $HelperPath = Get-AppFilePath 'aria2' 'aria2c.exe' }
         }
 
-        return $HelperPath
+        $HelperPath
+    }
+}
+
+function Get-InstalledHelperApp {
+    [CmdletBinding()]
+    [OutputType([String])]
+    param(
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateSet('7zip', 'Lessmsi', 'Innounp', 'Dark', 'Aria2')]
+        [String]
+        $Helper
+    )
+
+    process {
+        $InstalledApp = $null
+        foreach ($candidate in Get-HelperCandidate -Helper $Helper) {
+            if (!$candidate.App) {
+                continue
+            }
+
+            if (![String]::IsNullOrEmpty((Get-AppFilePath $candidate.App $candidate.File))) {
+                $InstalledApp = $candidate.App
+                break
+            }
+        }
+
+        $InstalledApp
     }
 }
 
