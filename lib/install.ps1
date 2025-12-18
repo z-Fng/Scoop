@@ -110,7 +110,7 @@ function Invoke-Installer {
     if ($installer.file -or $installer.args) {
         # Installer filename is either explicit defined ('installer.file') or file name in the first URL
         if (!$Name) {
-            $Name = url_filename @(url $manifest $architecture)
+            $Name = url_filename @(url $manifest $ProcessorArchitecture)
         }
         $progName = "$Path\$(coalesce $installer.file $Name[0])"
         if (!(is_in_dir $Path $progName)) {

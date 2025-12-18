@@ -474,12 +474,14 @@ function Get-HelperPath {
             '7zip' { $HelperPath = Get-AppFilePath '7zip' '7z.exe' }
             'Lessmsi' { $HelperPath = Get-AppFilePath 'lessmsi' 'lessmsi.exe' }
             'Innounp' {
+                # Changes to the extraction tool priority should be synced with the Get-OutdatedHelper function as well
                 $HelperPath = Get-AppFilePath 'innounp-unicode' 'innounp.exe'
                 if ([String]::IsNullOrEmpty($HelperPath)) {
                     $HelperPath = Get-AppFilePath 'innounp' 'innounp.exe'
                 }
             }
             'Dark' {
+                # Changes to the extraction tool priority should be synced with the Get-OutdatedHelper function as well
                 $HelperPath = Get-AppFilePath 'dark' 'dark.exe'
                 if ([String]::IsNullOrEmpty($HelperPath)) {
                     $HelperPath = Get-AppFilePath 'wixtoolset' 'wix.exe'

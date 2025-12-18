@@ -79,8 +79,8 @@ function Get-InstallationHelper {
         App's manifest
     .PARAMETER Architecture
         Architecture of the app
-    .PARAMETER All
-        If true, return all helpers, otherwise return only helpers that are not already installed
+    .PARAMETER IncludeInstalled
+        Include helpers that are already installed. By default, only missing helpers are returned.
     .OUTPUTS
         [Object[]]
         List of helpers
@@ -95,7 +95,7 @@ function Get-InstallationHelper {
         [String]
         $Architecture,
         [Switch]
-        $All
+        $IncludeInstalled
     )
     begin {
         $helper = @()
@@ -118,7 +118,7 @@ function Get-InstallationHelper {
         if ($script -like '*Expand-DarkArchive *') {
             $helper += 'dark'
         }
-        if (!$All) {
+        if (!$IncludeInstalled) {
             '7zip', 'lessmsi', 'innounp', 'dark' | ForEach-Object {
                 if (Test-HelperInstalled -Helper $_) {
                     $helper = $helper -ne $_
@@ -155,4 +155,93 @@ function Test-LessmsiRequirement {
         $Uri
     )
     return ($Uri | Where-Object { $_ -match '\.msi$' }).Count -gt 0
+}
+
+function Get-OutdatedHelper {
+    <#
+    .SYNOPSIS
+        Get outdated installation helpers
+    .PARAMETER Manifest
+        App's Manifest
+    .PARAMETER Architecture
+        Architecture of the app
+    .OUTPUTS
+        [Object[]]
+        A list of concrete outdated helper apps, each represented as a PSCustomObject with 'App' and 'Global' properties
+    .NOTES
+        helper  | concrete helper name
+        7zip    | 7zip
+        lessmsi | lessmsi
+        innounp | innounp-unicode/innounp
+        dark    | dark/wixtoolset
+    #>
+    [CmdletBinding()]
+    [OutputType([Object[]])]
+    param (
+        [Parameter(Mandatory, ValueFromPipelineByPropertyName)]
+        [PSObject]
+        $Manifest,
+        [Parameter(Mandatory, ValueFromPipelineByPropertyName)]
+        [String]
+        $Architecture
+    )
+
+    begin {
+        $helpers = @()
+    }
+
+    process {
+        $helpers += Get-InstallationHelper -Manifest $Manifest -Architecture $Architecture -IncludeInstalled | Where-Object {
+            (Test-HelperInstalled -Helper $_) -and ($helpers -notcontains $_)
+        }
+    }
+
+    end {
+        $outdated = @()
+
+        foreach ($helper in $helpers) {
+            # Get the concrete app name
+            $app = switch ($helper) {
+                '7zip' { '7zip' }
+                'lessmsi' { 'lessmsi' }
+                'innounp' { if (installed 'innounp-unicode') { 'innounp-unicode' } else { 'innounp' } }
+                'dark' { if (installed 'dark') { 'dark' } else { 'wixtoolset' } }
+                default { $null }
+            }
+
+            if (-not $app) {
+                continue
+            }
+
+            $global = installed $app $true
+            $status = app_status $app $global
+
+            if (-not ($status.installed -and $status.outdated)) {
+                continue
+            }
+
+            warn ("Outdated extraction tool '$app' detected: $($status.version) -> $($status.latest_version){0}." -f ('', ' (global)')[$global])
+
+            # Filter out outdated helpers that are held
+            if ($status.hold) {
+                warn "Skipping update of '$app' because it is held at version $($status.version)."
+                warn ("Outdated extraction tool may cause decompression errors. Please run 'scoop unhold $app{0}' to unhold it." -f ('', ' -g')[$global])
+                continue
+            }
+
+            # Filter out outdated helpers that are blocked by permission issues
+            if ((-not (is_admin)) -and $global) {
+                warn "Skipping update of '$app' because it is globally installed and requires admin rights to update."
+                warn "Outdated extraction tool may cause decompression errors. Please run 'scoop update $app -g' to update it."
+                continue
+            }
+
+            $outdated += [PSCustomObject]@{
+                App    = $app
+                Global = $global
+            }
+        }
+
+        return , $outdated
+    }
 }

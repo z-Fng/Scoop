@@ -8,6 +8,7 @@
 - **download|scoop-download:** Add GitHub issue prompt when the default downloader fails ([#6539](https://github.com/ScoopInstaller/Scoop/issues/6539))
 - **download|scoop-config:** Allow disabling automatic fallback to the default downloader when Aria2c download fails ([#6538](https://github.com/ScoopInstaller/Scoop/issues/6538))
 - **checkver:** Set GitHub mode default jsonpath and regex ([#6653](https://github.com/ScoopInstaller/Scoop/issues/6653))
+- **scoop-install|update:** Update extraction tools ahead of installs/updates ([#6572](https://github.com/ScoopInstaller/Scoop/issues/6572))
 
 ### Bug Fixes
 

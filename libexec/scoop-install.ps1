@@ -33,6 +33,7 @@
 . "$PSScriptRoot\..\lib\manifest.ps1" # 'generate_user_manifest' 'Get-Manifest' 'Select-CurrentVersion' (indirectly)
 . "$PSScriptRoot\..\lib\system.ps1"
 . "$PSScriptRoot\..\lib\install.ps1"
+. "$PSScriptRoot\..\lib\update.ps1"
 . "$PSScriptRoot\..\lib\download.ps1"
 . "$PSScriptRoot\..\lib\decompress.ps1"
 . "$PSScriptRoot\..\lib\shortcuts.ps1"
@@ -65,7 +66,7 @@ if ($global -and !(is_admin)) {
 
 if (is_scoop_outdated) {
     if ($opt.u -or $opt.'no-update-scoop') {
-        warn "Scoop is out of date."
+        warn 'Scoop is out of date.'
     } else {
         & "$PSScriptRoot\scoop-update.ps1"
     }
@@ -126,12 +127,29 @@ $skip | Where-Object { $explicit_apps -contains $_ } | ForEach-Object {
     warn "'$app' ($version) is already installed. Skipping."
 }
 
+$outdated_helpers = $apps | ForEach-Object {
+    $null, $manifest, $null, $null = Get-Manifest $_
+
+    if (-not $manifest) {
+        return
+    }
+
+    [PSCustomObject]@{
+        Manifest     = $manifest
+        Architecture = $architecture
+    }
+} | Get-OutdatedHelper
+
 $suggested = @{ };
 if ((Test-Aria2Enabled) -and (get_config 'aria2-warning-enabled' $true)) {
     warn "Scoop uses 'aria2c' for multi-connection downloads."
     warn "Should it cause issues, run 'scoop config aria2-enabled false' to disable it."
     warn "To disable this warning, run 'scoop config aria2-warning-enabled false'."
 }
+
+# Update extraction tools ahead of installs/updates
+$outdated_helpers | ForEach-Object { update $_.App $_.Global $false $false $independent $suggested $use_cache $check_hash }
+
 $apps | ForEach-Object { install_app $_ $architecture $global $suggested $use_cache $check_hash }
 
 show_suggestions $suggested

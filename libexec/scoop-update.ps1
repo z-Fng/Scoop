@@ -24,6 +24,7 @@
 . "$PSScriptRoot\..\lib\versions.ps1"
 . "$PSScriptRoot\..\lib\depends.ps1"
 . "$PSScriptRoot\..\lib\install.ps1"
+. "$PSScriptRoot\..\lib\update.ps1"
 . "$PSScriptRoot\..\lib\download.ps1"
 if (get_config USE_SQLITE_CACHE) {
     . "$PSScriptRoot\..\lib\database.ps1"
@@ -63,7 +64,7 @@ $show_update_log = get_config SHOW_UPDATE_LOG $true
 
 function Sync-Scoop {
     [CmdletBinding()]
-    Param (
+    param (
         [Switch]$Log
     )
     # Test if Scoop Core is hold
@@ -153,7 +154,7 @@ function Sync-Scoop {
 }
 
 function Sync-Bucket {
-    Param (
+    param (
         [Switch]$Log
     )
     Write-Host 'Updating Buckets...'
@@ -258,133 +259,6 @@ function Sync-Bucket {
     }
 }
 
-function update($app, $global, $quiet = $false, $independent, $suggested, $use_cache = $true, $check_hash = $true) {
-    $old_version = Select-CurrentVersion -AppName $app -Global:$global
-    $old_manifest = installed_manifest $app $old_version $global
-    $install = install_info $app $old_version $global
-
-    # re-use architecture, bucket and url from first install
-    $architecture = Format-ArchitectureString $install.architecture
-    $bucket = $install.bucket
-    if ($null -eq $bucket) {
-        $bucket = 'main'
-    }
-    $url = $install.url
-
-    $manifest = manifest $app $bucket $url
-    $version = $manifest.version
-    $is_nightly = $version -eq 'nightly'
-    if ($is_nightly) {
-        $version = nightly_version $quiet
-        $check_hash = $false
-    }
-
-    if (!$force -and ($old_version -eq $version)) {
-        if (!$quiet) {
-            warn "The latest version of '$app' ($version) is already installed."
-        }
-        return
-    }
-    if (!$version) {
-        # installed from a custom bucket/no longer supported
-        error "No manifest available for '$app'."
-        return
-    }
-
-    Write-Host "Updating '$app' ($old_version -> $version)"
-
-    #region Workaround for #2952
-    if (test_running_process $app $global) {
-        Write-Host 'Running process detected, skip updating.'
-        return
-    }
-    #endregion Workaround for #2952
-
-    # region Workaround
-    # Workaround for https://github.com/ScoopInstaller/Scoop/issues/2220 until install is refactored
-    # Remove and replace whole region after proper fix
-    Write-Host 'Downloading new version'
-    if (Test-Aria2Enabled) {
-        Invoke-CachedAria2Download $app $version $manifest $architecture $cachedir $manifest.cookie $true $check_hash
-    } else {
-        $urls = script:url $manifest $architecture
-
-        foreach ($url in $urls) {
-            Invoke-CachedDownload $app $version $url $null $manifest.cookie $true
-
-            if ($check_hash) {
-                $manifest_hash = hash_for_url $manifest $url $architecture
-                $source = cache_path $app $version $url
-                $ok, $err = check_hash $source $manifest_hash $(show_app $app $bucket)
-
-                if (!$ok) {
-                    error $err
-                    if (Test-Path $source) {
-                        # rm cached file
-                        Remove-Item -Force $source
-                    }
-                    if ($url.Contains('sourceforge.net')) {
-                        Write-Host -f yellow 'SourceForge.net is known for causing hash validation fails. Please try again before opening a ticket.'
-                    }
-                    abort $(new_issue_msg $app $bucket 'hash check failed')
-                }
-            }
-        }
-    }
-    # There is no need to check hash again while installing
-    $check_hash = $false
-    # endregion Workaround
-
-    $dir = versiondir $app $old_version $global
-    $persist_dir = persistdir $app $global
-
-    Invoke-HookScript -HookType 'pre_uninstall' -Manifest $old_manifest -Arch $architecture
-
-    Write-Host "Uninstalling '$app' ($old_version)"
-    Invoke-Installer -Path $dir -Manifest $old_manifest -ProcessorArchitecture $architecture -Global:$global -Uninstall
-    rm_shims $app $old_manifest $global $architecture
-
-    # If a junction was used during install, that will have been used
-    # as the reference directory. Otherwise it will just be the version
-    # directory.
-    $refdir = unlink_current $dir
-    uninstall_psmodule $old_manifest $refdir $global
-    env_rm_path $old_manifest $refdir $global $architecture
-    env_rm $old_manifest $global $architecture
-
-    if ($force -and ($old_version -eq $version)) {
-        if (!(Test-Path "$dir/../_$version.old")) {
-            Move-Item "$dir" "$dir/../_$version.old"
-        } else {
-            $i = 1
-            While (Test-Path "$dir/../_$version.old($i)") {
-                $i++
-            }
-            Move-Item "$dir" "$dir/../_$version.old($i)"
-        }
-    }
-
-    Invoke-HookScript -HookType 'post_uninstall' -Manifest $old_manifest -Arch $architecture
-
-    if ($bucket) {
-        # add bucket name it was installed from
-        $app = "$bucket/$app"
-    }
-    if ($install.url) {
-        # use the url of the install json if the application was installed through url
-        $app = $install.url
-    }
-
-    if ($independent) {
-        install_app $app $architecture $global $suggested $use_cache $check_hash
-    } else {
-        # Also add missing dependencies
-        $apps = @(Get-Dependency $app $architecture) -ne $app
-        ensure_none_failed $apps
-        $apps.Where({ !(installed $_) }) + $app | ForEach-Object { install_app $_ $architecture $global $suggested $use_cache $check_hash }
-    }
-}
-
 if (-not ($apps -or $all)) {
     if ($global) {
         error 'scoop update: --global is invalid when <app> is not specified.'
@@ -431,8 +305,10 @@ if (-not ($apps -or $all)) {
             $status = app_status $app $global
             if ($status.installed -and ($force -or $status.outdated)) {
                 if (!$status.hold) {
-                    $outdated += applist $app $global
-                    Write-Host -f yellow ("$app`: $($status.version) -> $($status.latest_version){0}" -f ('', ' (global)')[$global])
+                    $outdated += [PSCustomObject]@{
+                        App    = $app
+                        Global = $global
+                    }
                 } else {
                     warn "'$app' is held to version $($status.version)"
                 }
@@ -444,6 +320,29 @@ if (-not ($apps -or $all)) {
                     info 'Please reinstall it or fix the manifest.'
                 }
             }
+        }
+
+        # Update extraction tools ahead of installs/updates
+        $outdated_helpers = $outdated | ForEach-Object {
+            $version = Select-CurrentVersion -AppName $_.App -Global:$($_.Global)
+            $install = install_info $_.App $version $_.Global
+            $manifest = manifest $_.App $install.bucket $install.url
+
+            if (-not $manifest) {
+                return
+            }
+
+            [PSCustomObject]@{
+                Manifest     = $manifest
+                Architecture = Format-ArchitectureString -Architecture $install.architecture
+            }
+        } | Get-OutdatedHelper
+        $outdated = $outdated | Where-Object { $_.App -notin $outdated_helpers.App }
+        $outdated = $outdated_helpers + $outdated
+
+        $outdated | ForEach-Object {
+            $status = app_status $_.App $_.Global
+            Write-Host -f yellow ("$($_.App)`: $($status.version) -> $($status.latest_version){0}" -f ('', ' (global)')[$_.Global])
         }
 
         if ($outdated -and ((Test-Aria2Enabled) -and (get_config 'aria2-warning-enabled' $true))) {
@@ -461,8 +360,7 @@ if (-not ($apps -or $all)) {
     }
 
     $suggested = @{}
-    # $outdated is a list of ($app, $global) tuples
-    $outdated | ForEach-Object { update @_ $quiet $independent $suggested $use_cache $check_hash }
+    $outdated | ForEach-Object { update $_.App $_.Global $force $quiet $independent $suggested $use_cache $check_hash }
 }
 
 exit 0

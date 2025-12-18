@@ -47,6 +47,12 @@ Describe 'Package Dependencies' -Tag 'Scoop' {
             Get-InstallationHelper -Manifest $manifest1 -Architecture '32bit' | Should -BeNullOrEmpty
             Get-InstallationHelper -Manifest $manifest2 -Architecture '32bit' | Should -BeNullOrEmpty
         }
+        It 'Can include installed helpers' {
+            Mock get_config { $false }
+            Mock Test-HelperInstalled { $true } -ParameterFilter { $Helper -eq '7zip' }
+            Get-InstallationHelper -Manifest $manifest2 -Architecture '32bit' | Should -BeNullOrEmpty
+            Get-InstallationHelper -Manifest $manifest2 -Architecture '32bit' -IncludeInstalled | Should -Be @('7zip')
+        }
         It 'Not return installed helpers' {
             Mock get_config { $true } -ParameterFilter { $name -eq 'USE_LESSMSI' }
             Mock get_config { $false } -ParameterFilter { $name -eq 'USE_EXTERNAL_7ZIP' }
@@ -90,6 +96,12 @@ Describe 'Package Dependencies' -Tag 'Scoop' {
             Mock Get-Manifest { 'depends', @{}, 'anotherbucket', $null } -ParameterFilter { $app -eq 'anotherbucket/depends' }
             Mock Get-Manifest { 'test', @{ depends = 'anotherbucket/depends' }, 'bucket', $null }
             Get-Dependency -AppName 'bucket/test' -Architecture '32bit' | Should -Be @('anotherbucket/depends', 'bucket/test')
+        }
+    }
+
+    Context 'OutdatedHelper function' {
+        It 'requires a non-null manifest' {
+            { Get-OutdatedHelper -Manifest $null -Architecture '32bit' -ErrorAction Stop } | Should -Throw
         }
     }
 }
