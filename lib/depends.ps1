@@ -169,11 +169,7 @@ function Get-OutdatedHelper {
         [Object[]]
         A list of concrete outdated helper apps, each represented as a PSCustomObject with 'App' and 'Global' properties
     .NOTES
-        helper  | concrete helper name
-        7zip    | 7zip
-        lessmsi | lessmsi
-        innounp | innounp-unicode/innounp
-        dark    | dark/wixtoolset
+        Concrete helper app priority is defined by Get-HelperCandidate.
     #>
     [CmdletBinding()]
     [OutputType([Object[]])]
@@ -200,14 +196,7 @@ function Get-OutdatedHelper {
         $outdated = @()
 
         foreach ($helper in $helpers) {
-            # Get the concrete app name
-            $app = switch ($helper) {
-                '7zip' { '7zip' }
-                'lessmsi' { 'lessmsi' }
-                'innounp' { if (installed 'innounp-unicode') { 'innounp-unicode' } else { 'innounp' } }
-                'dark' { if (installed 'dark') { 'dark' } else { 'wixtoolset' } }
-                default { $null }
-            }
+            $app = Get-InstalledHelperApp -Helper $helper
 
             if (-not $app) {
                 continue

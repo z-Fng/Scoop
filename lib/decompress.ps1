@@ -1,5 +1,40 @@
 # Description: Functions for decompressing archives or installers
 
+function Test-7zipExtractionAvailable {
+    $scoop7zip = Test-HelperInstalled -Helper 7zip
+    $external7zip = (get_config USE_EXTERNAL_7ZIP) -and (Test-CommandAvailable 7z)
+    return $scoop7zip -or $external7zip
+}
+
+function Get-ExtractionFunction {
+    [CmdletBinding()]
+    [OutputType([String])]
+    param (
+        [Parameter(Mandatory = $true)]
+        [String]
+        $Name,
+        [Parameter(Mandatory = $true)]
+        [PSObject]
+        $Manifest
+    )
+
+    if ($Name -match '\.zip$') {
+        if (Test-7zipExtractionAvailable) {
+            return 'Expand-7zipArchive'
+        }
+        return 'Expand-ZipArchive'
+    }
+    if ($Name -match '\.msi$') {
+        return 'Expand-MsiArchive'
+    }
+    if (($Name -match '\.exe$') -and $Manifest.innosetup) {
+        return 'Expand-InnoArchive'
+    }
+    if (Test-7zipRequirement -Uri $Name) {
+        return 'Expand-7zipArchive'
+    }
+}
+
 function Invoke-Extraction {
     param (
         [string]
@@ -20,32 +55,7 @@ function Invoke-Extraction {
     $extracted = 0
 
     for ($i = 0; $i -lt $Name.Length; $i++) {
-        # work out extraction method, if applicable
-        $extractFn = $null
-        switch -regex ($Name[$i]) {
-            '\.zip$' {
-                if ((Test-HelperInstalled -Helper 7zip) -or ((get_config USE_EXTERNAL_7ZIP) -and (Test-CommandAvailable 7z))) {
-                    $extractFn = 'Expand-7zipArchive'
-                } else {
-                    $extractFn = 'Expand-ZipArchive'
-                }
-                continue
-            }
-            '\.msi$' {
-                $extractFn = 'Expand-MsiArchive'
-                continue
-            }
-            '\.exe$' {
-                if ($Manifest.innosetup) {
-                    $extractFn = 'Expand-InnoArchive'
-                }
-                continue
-            }
-            { Test-7zipRequirement -Uri $_ } {
-                $extractFn = 'Expand-7zipArchive'
-                continue
-            }
-        }
+        $extractFn = Get-ExtractionFunction -Name $Name[$i] -Manifest $Manifest
         if ($extractFn) {
             $fnArgs = @{
                 Path            = Join-Path $Path $Name[$i]

@@ -1,10 +1,35 @@
 BeforeAll {
     . "$PSScriptRoot\Scoop-TestLib.ps1"
     . "$PSScriptRoot\..\lib\core.ps1"
+    . "$PSScriptRoot\..\lib\depends.ps1"
     . "$PSScriptRoot\..\lib\decompress.ps1"
     . "$PSScriptRoot\..\lib\install.ps1"
     . "$PSScriptRoot\..\lib\manifest.ps1"
     . "$PSScriptRoot\..\lib\versions.ps1"
+}
+
+Describe 'Extraction selection' -Tag 'Scoop', 'Decompress' {
+    It 'selects 7zip for zip when 7zip extraction is available' {
+        Mock Test-HelperInstalled { $true } -ParameterFilter { $Helper -eq '7zip' }
+        Mock get_config { $false } -ParameterFilter { $name -eq 'USE_EXTERNAL_7ZIP' }
+        Get-ExtractionFunction -Name 'app.zip' -Manifest ([PSCustomObject]@{}) | Should -Be 'Expand-7zipArchive'
+    }
+
+    It 'selects native zip extraction when 7zip extraction is unavailable' {
+        Mock Test-HelperInstalled { $false } -ParameterFilter { $Helper -eq '7zip' }
+        Mock get_config { $false } -ParameterFilter { $name -eq 'USE_EXTERNAL_7ZIP' }
+        Get-ExtractionFunction -Name 'app.zip' -Manifest ([PSCustomObject]@{}) | Should -Be 'Expand-ZipArchive'
+    }
+
+    It 'selects installer extraction by extension and manifest' {
+        Get-ExtractionFunction -Name 'app.msi' -Manifest ([PSCustomObject]@{}) | Should -Be 'Expand-MsiArchive'
+        Get-ExtractionFunction -Name 'app.exe' -Manifest ([PSCustomObject]@{ innosetup = $true }) | Should -Be 'Expand-InnoArchive'
+        Get-ExtractionFunction -Name 'app.exe' -Manifest ([PSCustomObject]@{}) | Should -BeNullOrEmpty
+    }
+
+    It 'selects 7zip for 7zip archive formats' {
+        Get-ExtractionFunction -Name 'app.7z' -Manifest ([PSCustomObject]@{}) | Should -Be 'Expand-7zipArchive'
+    }
 }
 
 Describe 'Decompression function' -Tag 'Scoop', 'Windows', 'Decompress' {
