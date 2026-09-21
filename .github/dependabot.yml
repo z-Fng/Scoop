@@ -4,5 +4,11 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/" # == /.github/workflows/
+    target-branch: "develop"
+    labels: []
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(github-action)"
+    cooldown:
+      default-days: 14
