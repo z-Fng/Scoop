@@ -163,7 +163,7 @@ $Queue | ForEach-Object {
         }
 
         if ($inputGithubUrl -notmatch $githubUrlPattern) {
-            error "$name checkver expects $fieldUsed to be a valid GitHub repository URL"
+            Write-Host "$([char]0x1b)[31mERROR $name checkver expects $fieldUsed to be a valid GitHub repository URL$([char]0x1b)[0m`n"
             return
         }
 
@@ -271,11 +271,6 @@ $Queue | ForEach-Object {
     $in_progress++
 }
 
-function next($er) {
-    Write-Host "$App`: " -NoNewline
-    Write-Host $er -ForegroundColor DarkRed
-}
-
 # wait for all to complete
 while ($in_progress -gt 0) {
     $ev = Wait-Event
@@ -301,13 +296,13 @@ while ($in_progress -gt 0) {
 
     if (!$ver) {
         if (!$regexp -and $replace) {
-            next "'replace' requires 're' or 'regex'"
+            Write-Host "$app`: $([char]0x1b)[31m'replace' requires 're' or 'regex'$([char]0x1b)[0m`n"
             continue
         }
         $err = $ev.SourceEventArgs.Error
         if ($err) {
             if (!$script) {
-                next "$($err.message)`r`nURL $url is not valid"
+                Write-Host "$app`: $([char]0x1b)[31m$($err.message)`r`nURL $url is not valid$([char]0x1b)[0m`n"
                 continue
             } else {
                 # Run script despite URL download failure
@@ -334,7 +329,7 @@ while ($in_progress -gt 0) {
         }
 
         if ($null -eq $page) {
-            next "couldn't retrieve content from $source"
+            Write-Host "$app`: $([char]0x1b)[31mcouldn't retrieve content from $source$([char]0x1b)[0m`n"
             continue
         }
 
@@ -350,7 +345,7 @@ while ($in_progress -gt 0) {
                 $ver = json_path_legacy $page $jsonpath
             }
             if (!$ver) {
-                next "couldn't find '$jsonpath' in $source"
+                Write-Host "$app`: $([char]0x1b)[31mcouldn't find '$jsonpath' in $source$([char]0x1b)[0m`n"
                 continue
             }
         }
@@ -372,7 +367,7 @@ while ($in_progress -gt 0) {
             # Getting version from XML, using XPath
             $ver = $xml.SelectSingleNode($xpath, $nsmgr).'#text'
             if (!$ver) {
-                next "couldn't find '$($xpath -replace 'ns:', '')' in $source"
+                Write-Host "$app`: $([char]0x1b)[31mcouldn't find '$($xpath -replace 'ns:', '')' in $source$([char]0x1b)[0m`n"
                 continue
             }
         }
@@ -405,13 +400,13 @@ while ($in_progress -gt 0) {
                     $ver = $matchesHashtable['version']
                 }
             } else {
-                next "couldn't match '$regexp' in $source"
+                Write-Host "$app`: $([char]0x1b)[31mcouldn't match '$regexp' in $source$([char]0x1b)[0m`n"
                 continue
             }
         }
 
         if (!$ver) {
-            next "couldn't find new version in $source"
+            Write-Host "$app`: $([char]0x1b)[31mcouldn't find new version in $source$([char]0x1b)[0m`n"
             continue
         }
     }
@@ -419,30 +414,26 @@ while ($in_progress -gt 0) {
     # Skip actual only if versions are same and there is no -f
     if (($ver -eq $expected_ver) -and !$ForceUpdate -and $SkipUpdated) { continue }
 
-    Write-Host "$app`: " -NoNewline
-
     # version hasn't changed (step over if forced update)
     if ($ver -eq $expected_ver -and !$ForceUpdate) {
-        Write-Host $ver -ForegroundColor DarkGreen
+        Write-Host "$app`: $([char]0x1b)[32m$ver$([char]0x1b)[0m"
         continue
     }
 
-    Write-Host $ver -ForegroundColor DarkRed -NoNewline
-    Write-Host " (scoop version is $expected_ver)" -NoNewline
     $update_available = ([Scoop.VersionComparer]::Compare($ver, $expected_ver, (Get-UpdateNightlySetting))) -ne 0
 
+    $line = "$app`: $([char]0x1b)[31m$ver$([char]0x1b)[0m (scoop version is $expected_ver)"
     if ($json.autoupdate -and $update_available) {
-        Write-Host ' autoupdate available' -ForegroundColor Cyan
-    } else {
-        Write-Host ''
+        $line += " $([char]0x1b)[36mautoupdate available$([char]0x1b)[0m"
     }
+    Write-Host $line
 
     # forcing an update implies updating, right?
     if ($ForceUpdate) { $Update = $true }
 
     if ($Update -and $json.autoupdate) {
         if ($ForceUpdate) {
-            Write-Host 'Forcing autoupdate!' -ForegroundColor DarkMagenta
+            Write-Host "$([char]0x1b)[35mForcing autoupdate!$([char]0x1b)[0m"
         }
         try {
             Invoke-AutoUpdate $app $file $json $ver $matchesHashtable # 'autoupdate.ps1'
@@ -450,8 +441,11 @@ while ($in_progress -gt 0) {
             if ($ThrowError) {
                 throw $_
             } else {
-                error $_.Exception.Message
+                Write-Host "$([char]0x1b)[31mERROR $($_.Exception.Message)$([char]0x1b)[0m"
             }
         }
     }
+
+    # Print a blank line for readability between app checks
+    Write-Host ''
 }

@@ -29,8 +29,8 @@ function find_hash_in_rdf([String] $url, [String] $basename) {
         $data = $wc.DownloadData($url)
         [xml]$xml = (Get-Encoding($wc)).GetString($data)
     } catch [System.Net.WebException] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return $null
     }
 
@@ -65,8 +65,8 @@ function find_hash_in_textfile([String] $url, [Hashtable] $substitutions, [Strin
         }
         $hashfile = (New-Object System.IO.StreamReader($ms, (Get-Encoding $wc))).ReadToEnd()
     } catch [system.net.webexception] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return
     }
 
@@ -133,8 +133,8 @@ function find_hash_in_json([String] $url, [Hashtable] $substitutions, [String] $
         }
         $json = (New-Object System.IO.StreamReader($ms, (Get-Encoding $wc))).ReadToEnd()
     } catch [System.Net.WebException] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return
     }
     debug $jsonpath
@@ -161,8 +161,8 @@ function find_hash_in_xml([String] $url, [Hashtable] $substitutions, [String] $x
         }
         $xml = [xml]((New-Object System.IO.StreamReader($ms, (Get-Encoding $wc))).ReadToEnd())
     } catch [system.net.webexception] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return
     }
 
@@ -205,8 +205,8 @@ function find_hash_in_headers([String] $url) {
         }
         $res.Close()
     } catch [System.Net.WebException] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return
     }
 
@@ -232,10 +232,7 @@ function get_hash_for_app([String] $app, $config, [String] $version, [String] $u
     $hashfile_url = substitute $config.url $substitutions
     debug $hashfile_url
     if ($hashfile_url) {
-        Write-Host 'Searching hash for ' -ForegroundColor DarkYellow -NoNewline
-        Write-Host $basename -ForegroundColor Green -NoNewline
-        Write-Host ' in ' -ForegroundColor DarkYellow -NoNewline
-        Write-Host $hashfile_url -ForegroundColor Green
+        Write-Host "$([char]0x1b)[33mSearching hash for $([char]0x1b)[32m$basename$([char]0x1b)[33m in $([char]0x1b)[32m$hashfile_url$([char]0x1b)[0m"
     }
 
     if ($hashmode.Length -eq 0 -and $config.url.Length -ne 0) {
@@ -312,29 +309,23 @@ function get_hash_for_app([String] $app, $config, [String] $version, [String] $u
 
     if ($hash) {
         # got one!
-        Write-Host 'Found: ' -ForegroundColor DarkYellow -NoNewline
-        Write-Host $hash -ForegroundColor Green -NoNewline
-        Write-Host ' using ' -ForegroundColor DarkYellow -NoNewline
-        Write-Host "$((Get-Culture).TextInfo.ToTitleCase($hashmode)) Mode" -ForegroundColor Green
+        Write-Host "$([char]0x1b)[33mFound: $([char]0x1b)[32m$hash$([char]0x1b)[33m using $([char]0x1b)[32m$((Get-Culture).TextInfo.ToTitleCase($hashmode)) Mode$([char]0x1b)[0m"
         return $hash
     } elseif ($hashfile_url) {
-        Write-Host -f DarkYellow "Could not find hash in $hashfile_url"
+        Write-Host "$([char]0x1b)[33mCould not find hash in $hashfile_url$([char]0x1b)[0m"
     }
 
-    Write-Host 'Downloading ' -ForegroundColor DarkYellow -NoNewline
-    Write-Host $basename -ForegroundColor Green -NoNewline
-    Write-Host ' to compute hashes!' -ForegroundColor DarkYellow
+    Write-Host "$([char]0x1b)[33mDownloading $([char]0x1b)[32m$basename$([char]0x1b)[33m to compute hashes!$([char]0x1b)[0m"
     try {
         Invoke-CachedDownload $app $version $url $null $null $true
     } catch [system.net.webexception] {
-        Write-Host $_ -ForegroundColor DarkRed
-        Write-Host "URL $url is not valid" -ForegroundColor DarkRed
+        Write-Host "$([char]0x1b)[31m$_$([char]0x1b)[0m"
+        Write-Host "$([char]0x1b)[31mURL $url is not valid$([char]0x1b)[0m"
         return $null
     }
     $file = cache_path $app $version $url
     $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLower()
-    Write-Host 'Computed hash: ' -ForegroundColor DarkYellow -NoNewline
-    Write-Host $hash -ForegroundColor Green
+    Write-Host "$([char]0x1b)[33mComputed hash: $([char]0x1b)[32m$hash$([char]0x1b)[0m"
     return $hash
 }
 
@@ -485,7 +476,7 @@ function Invoke-AutoUpdate {
         $CustomMatches
     )
 
-    Write-Host "Autoupdating $AppName" -ForegroundColor DarkCyan
+    Write-Host "$([char]0x1b)[36mAutoupdating $AppName$([char]0x1b)[0m"
     $substitutions = Get-VersionSubstitution $Version $CustomMatches
 
     # update properties
@@ -502,7 +493,7 @@ function Invoke-AutoUpdate {
 
     if ($hasChanged) {
         # write file
-        Write-Host "Writing updated $AppName manifest" -ForegroundColor DarkGreen
+        Write-Host "$([char]0x1b)[32mWriting updated $AppName manifest$([char]0x1b)[0m"
         # Accept unusual Unicode characters
         # 'Set-Content -Encoding ASCII' don't works in PowerShell 5
         # Wait for 'UTF8NoBOM' Encoding in PowerShell 7
@@ -523,11 +514,11 @@ function Invoke-AutoUpdate {
             }
         }
         if ($hasNote) {
-            Write-Host $note -ForegroundColor DarkYellow
+            Write-Host "$([char]0x1b)[33m$note$([char]0x1b)[0m"
         }
     } else {
         # This if-else branch may not be in use.
-        Write-Host "No updates for $AppName" -ForegroundColor DarkGray
+        Write-Host "$([char]0x1b)[90mNo updates for $AppName$([char]0x1b)[0m"
     }
 }
 
