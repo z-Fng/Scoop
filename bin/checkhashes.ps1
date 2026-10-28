@@ -54,8 +54,7 @@ if ($ForceUpdate) { $Update = $true }
 if (!$UseCache) { Remove-Item "$cachedir\*HASH_CHECK*" -Force }
 
 function err ([String] $name, [String[]] $message) {
-    Write-Host "$name`: " -ForegroundColor Red -NoNewline
-    Write-Host ($message -join "`r`n") -ForegroundColor Red
+    Write-Host "$([char]0x1b)[31m$name`: $($message -join "`r`n")$([char]0x1b)[0m"
 }
 
 $MANIFESTS = @()
@@ -139,20 +138,18 @@ foreach ($current in $MANIFESTS) {
 
     if ($mismatched.Length -eq 0 ) {
         if (!$SkipCorrect) {
-            Write-Host "$($current.app): " -NoNewline
-            Write-Host 'OK' -ForegroundColor Green
+            Write-Host "$($current.app): $([char]0x1b)[32mOK$([char]0x1b)[0m"
         }
     } else {
-        Write-Host "$($current.app): " -NoNewline
-        Write-Host 'Mismatch found ' -ForegroundColor Red
+        Write-Host "$($current.app): $([char]0x1b)[31mMismatch found $([char]0x1b)[0m"
         $mismatched | ForEach-Object {
             $file = cache_path $current.app $version $current.urls[$_]
             Write-Host "`tURL:`t`t$($current.urls[$_])"
             if (Test-Path $file) {
                 Write-Host "`tFirst bytes:`t$((get_magic_bytes_pretty $file ' ').ToUpper())"
             }
-            Write-Host "`tExpected:`t$($current.hashes[$_])" -ForegroundColor Green
-            Write-Host "`tActual:`t`t$($actuals[$_])" -ForegroundColor Red
+            Write-Host "$([char]0x1b)[32m`tExpected:`t$($current.hashes[$_])$([char]0x1b)[0m"
+            Write-Host "$([char]0x1b)[31m`tActual:`t`t$($actuals[$_])$([char]0x1b)[0m"
         }
     }
 
@@ -181,7 +178,7 @@ foreach ($current in $MANIFESTS) {
             }
         }
 
-        Write-Host "Writing updated $($current.app) manifest" -ForegroundColor DarkGreen
+        Write-Host "$([char]0x1b)[32mWriting updated $($current.app) manifest$([char]0x1b)[0m"
 
         $current.manifest = $current.manifest | ConvertToPrettyJson
         $path = Convert-Path $current.file
