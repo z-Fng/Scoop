@@ -2,6 +2,7 @@
 
 ### Features
 
+- **scoop-versions:** Add `scoop versions` to list historical app versions from Git history and SQLite cache
 - **shim:** Rework the shim system around architecture-native bodies ([#6783](https://github.com/ScoopInstaller/Scoop/issues/6783), [#6799](https://github.com/ScoopInstaller/Scoop/issues/6799))
 
 ### Bug Fixes

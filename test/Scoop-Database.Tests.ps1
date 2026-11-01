@@ -89,3 +89,44 @@ Describe 'database version selection' -Tag 'Scoop' {
         $latest[0].version | Should-Be '2.0'
     }
 }
+
+Describe 'Get-ScoopDBVersions' -Tag 'Scoop' {
+    BeforeAll {
+        . "$PSScriptRoot\Scoop-TestLib.ps1"
+        . "$PSScriptRoot\..\lib\core.ps1"
+        . "$PSScriptRoot\..\lib\versions.ps1"
+        . "$PSScriptRoot\..\lib\database.ps1"
+    }
+
+    It 'returns distinct versions for the requested app and bucket' {
+        $scoopdir = Join-Path $TestDrive ("scoop-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $scoopdir -Force | Out-Null
+
+        Set-ScoopDBItem @(
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '1.0'; bucket = 'main'; manifest = '{"version":"1.0"}' }
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '1.1'; bucket = 'main'; manifest = '{"version":"1.1"}' }
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '1.0'; bucket = 'main'; manifest = '{"version":"1.0","hash":"new"}' }
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '2.0'; bucket = 'other'; manifest = '{"version":"2.0"}' }
+            [pscustomobject]@{ name = 'bar'; description = ''; version = '9.9'; bucket = 'main'; manifest = '{"version":"9.9"}' }
+        )
+
+        $versions = @(Get-ScoopDBVersions -Name 'foo' -Bucket 'main' | Sort-Object)
+
+        ($versions -join ',') | Should-Be '1.0,1.1'
+    }
+
+    It 'returns versions in reverse cache insertion order' {
+        $scoopdir = Join-Path $TestDrive ("scoop-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $scoopdir -Force | Out-Null
+
+        Set-ScoopDBItem @(
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '1.0'; bucket = 'main'; manifest = '{"version":"1.0"}' }
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '2.0'; bucket = 'main'; manifest = '{"version":"2.0"}' }
+            [pscustomobject]@{ name = 'foo'; description = ''; version = '1.1'; bucket = 'main'; manifest = '{"version":"1.1"}' }
+        )
+
+        $versions = @(Get-ScoopDBVersions -Name 'foo' -Bucket 'main')
+
+        ($versions -join ',') | Should-Be '1.1,2.0,1.0'
+    }
+}

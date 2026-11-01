@@ -130,6 +130,7 @@ Describe 'Find-HistoricalManifestInGit' -Tag 'Scoop' {
         Mock Find-BucketDirectory -ParameterFilter { -not $Root } { $innerBucket }
         Mock Test-Path -ParameterFilter { $Path -eq (Join-Path $bucketRoot '.git') } { $true }
         Mock Test-Path -ParameterFilter { $Path -eq $innerBucket -and $PathType -eq 'Container' } { $true }
+        Mock Get-ChildItem -ParameterFilter { $LiteralPath -eq $innerBucket } { [pscustomobject]@{ FullName = (Join-Path $innerBucket 'foo.json') } }
     }
 
     It 'returns $null when git history search disabled' {
@@ -313,5 +314,154 @@ Describe 'manifest bucket auto-discovery' -Tag 'Scoop' {
         $m = manifest 'foo' $null 'https://example.com/foo.json'
         $m.version | Should-Be '1.0.0'
         Should-Invoke url_manifest -Times 1
+    }
+
+    It 'normalizes an explicit bucket name' {
+        Mock Get-LocalBucket { @('main', 'extras') }
+        Mock manifest_path -ParameterFilter { $bucket -eq 'extras' } { 'C:\buckets\extras\bucket\foo.json' }
+        Mock parse_json { @{ version = '1.0.0' } }
+
+        $app, $manifest, $bucket, $url = Get-Manifest 'Extras/Foo'
+
+        $bucket | Should-Be 'extras'
+        $manifest.version | Should-Be '1.0.0'
+    }
+}
+
+Describe 'Resolve-BucketName' -Tag 'Scoop' {
+    It 'resolves a local bucket name case-insensitively' {
+        Mock Get-LocalBucket { @('main', 'extras') }
+
+        Resolve-BucketName 'Extras' | Should-Be 'extras'
+    }
+
+    It 'returns the input when no local bucket matches' {
+        Mock Get-LocalBucket { @('main') }
+
+        Resolve-BucketName 'unknown' | Should-Be 'unknown'
+    }
+}
+
+Describe 'Find-HistoricalVersionsInGit' -Tag 'Scoop' {
+    BeforeEach {
+        $bucketRoot = 'C:\b\root'
+        $innerBucket = 'C:\b\root\bucket'
+        Mock Find-BucketDirectory -ParameterFilter { $Root } { $bucketRoot }
+        Mock Find-BucketDirectory -ParameterFilter { -not $Root } { $innerBucket }
+        Mock Test-Path -ParameterFilter { $Path -eq (Join-Path $bucketRoot '.git') } { $true }
+        Mock Test-Path -ParameterFilter { $Path -eq $innerBucket -and $PathType -eq 'Container' } { $true }
+        Mock Get-ChildItem -ParameterFilter { $LiteralPath -eq $innerBucket } { [pscustomobject]@{ FullName = (Join-Path $innerBucket 'foo.json') } }
+        Mock Test-GitAvailable { $true }
+        Mock get_config -ParameterFilter { $name -eq 'use_git_history' } { $true }
+        $global:LASTEXITCODE = 0
+    }
+
+    It 'returns an empty array when Git history is disabled' {
+        Mock get_config -ParameterFilter { $name -eq 'use_git_history' } { $false }
+        Mock Invoke-Git { throw 'Git should not be called.' }
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result.Count | Should-Be 0
+        Should-Invoke -CommandName Invoke-Git -Times 0
+    }
+
+    It 'throws when git log fails' {
+        Mock Invoke-Git { $global:LASTEXITCODE = 128; @() }
+
+        { Find-HistoricalVersionsInGit 'foo' 'main' } |
+            Should-Throw '*git log failed*exit code 128*'
+    }
+
+    It 'uses the manifest filename casing from disk' {
+        Mock Get-ChildItem -ParameterFilter { $LiteralPath -eq $innerBucket } { [pscustomobject]@{ FullName = (Join-Path $innerBucket 'foo.json') } }
+        Mock Invoke-Git { @() }
+
+        $null = Find-HistoricalVersionsInGit 'Foo' 'main'
+
+        # -ccontains is case-sensitive; -contains would not verify the casing.
+        Should-Invoke -CommandName Invoke-Git -Times 1 -ParameterFilter { $ArgumentList -ccontains 'bucket/foo.json' }
+    }
+
+    It 'parses versions newest first and skips commits without a version change' {
+        $us = [Char]31
+        $log = @(
+            "__SCOOP_MANIFEST_COMMIT__abc1234${us}2026-10-21 16:32:26${us}Update to 2.0"
+            'diff --git a/bucket/foo.json b/bucket/foo.json'
+            '+    "version": "2.0",'
+            "__SCOOP_MANIFEST_COMMIT__def5678${us}2026-10-06 08:40:15${us}Only hashes changed"
+            '-    "hash": "old"'
+            '+    "hash": "new"'
+            "__SCOOP_MANIFEST_COMMIT__fff0000${us}2026-09-01 00:00:00${us}Update to 1.0"
+            '+    "version": "1.0",'
+        )
+        Mock Invoke-Git { $log }
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result.Count | Should-Be 2
+        $result[0].Version | Should-Be '2.0'
+        $result[0].Commit | Should-Be 'abc1234'
+        $result[0].Updated | Should-Be '2026-10-21 16:32:26'
+        $result[1].Version | Should-Be '1.0'
+        $result[1].Commit | Should-Be 'fff0000'
+        Should-Invoke -CommandName Invoke-Git -Times 1 -ParameterFilter {
+            $ArgumentList -ccontains '--date=format-local:%Y-%m-%d %H:%M:%S' -and
+            $ArgumentList -ccontains '--format=__SCOOP_MANIFEST_COMMIT__%h%x1f%cd%x1f%s'
+        }
+    }
+
+    It 'uses the preformatted committer time string' {
+        $us = [Char]31
+        $log = @(
+            "__SCOOP_MANIFEST_COMMIT__abc1234${us}2026-10-21 16:32:26${us}Update to 2.0"
+            '+    "version": "2.0",'
+        )
+        Mock Invoke-Git { $log }
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result[0].Updated | Should-Be '2026-10-21 16:32:26'
+    }
+
+    It 'keeps the newest commit when a version was reverted' {
+        $us = [Char]31
+        $log = @(
+            "__SCOOP_MANIFEST_COMMIT__c333333${us}2026-10-30 00:00:00${us}Revert to 1.0"
+            '+    "version": "1.0",'
+            "__SCOOP_MANIFEST_COMMIT__c222222${us}2026-10-20 00:00:00${us}Update to 2.0"
+            '+    "version": "2.0",'
+            "__SCOOP_MANIFEST_COMMIT__c111111${us}2026-10-10 00:00:00${us}Initial 1.0"
+            '+    "version": "1.0",'
+        )
+        Mock Invoke-Git { $log }
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result.Count | Should-Be 2
+        $result[0].Version | Should-Be '1.0'
+        $result[0].Commit | Should-Be 'c333333'
+        $result[1].Version | Should-Be '2.0'
+        $result[1].Commit | Should-Be 'c222222'
+    }
+
+    It 'returns an empty array when Git is unavailable' {
+        Mock Test-GitAvailable { $false }
+        Mock warn {}
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result.Count | Should-Be 0
+        Should-Invoke warn -Times 1 -ParameterFilter { $msg -match 'Git is not available' }
+    }
+
+    It 'returns an empty array when the bucket is not a Git repository' {
+        Mock Test-Path -ParameterFilter { $Path -eq (Join-Path $bucketRoot '.git') } { $false }
+        Mock warn {}
+
+        $result = @(Find-HistoricalVersionsInGit 'foo' 'main')
+
+        $result.Count | Should-Be 0
+        Should-Invoke warn -Times 1 -ParameterFilter { $msg -match 'not a git repository' }
     }
 }

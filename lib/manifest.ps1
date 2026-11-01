@@ -52,6 +52,7 @@ function Get-Manifest($app) {
             $install_info = install_info $app $ver $global
             if ($install_info) {
                 $bucket = $install_info.bucket
+                if ($bucket) { $bucket = Resolve-BucketName $bucket }
                 if (!$bucket) {
                     $url = $install_info.url
                     if ($url -match '^(ht|f)tps?://|\\\\') {
@@ -75,6 +76,7 @@ function Get-Manifest($app) {
             }
         } else {
             $app, $bucket, $version = parse_app $app
+            if ($bucket) { $bucket = Resolve-BucketName $bucket }
             if ($bucket) {
                 $manifest = manifest $app $bucket
             } else {
@@ -207,15 +209,8 @@ function Find-HistoricalManifestInCache($app, $bucket, $requestedVersion) {
     return @{ ManifestText = $manifestText; version = $manifestVersion; source = "sqlite_exact_match" }
 }
 
-function Find-HistoricalManifestInGit($app, $bucket, $requestedVersion) {
-    if (!(get_config USE_GIT_HISTORY $true)) {
-        return $null
-    }
-
-    if (!$bucket) {
-        return $null
-    }
-
+# Resolve the bucket repository root and the manifest path relative to it.
+function Get-ManifestGitPath($app, $bucket) {
     $bucketDir = Find-BucketDirectory $bucket -Root
     if (!(Test-Path "$bucketDir\.git")) {
         warn "Bucket '$bucket' is not a git repository. Cannot search historical versions."
@@ -227,7 +222,36 @@ function Find-HistoricalManifestInGit($app, $bucket, $requestedVersion) {
         warn "Could not find inner bucket directory for '$bucket' at '$innerBucketDir'."
         return $null
     }
-    $relativeManifestPath = (Get-RelativePath $bucketDir (Join-Path $innerBucketDir "$app.json")) -replace '\\', '/'
+
+    # Use the manifest's on-disk casing: Git paths are case-sensitive even when
+    # PowerShell resolved an app name case-insensitively.
+    $manifestFile = Get-ChildItem -LiteralPath $innerBucketDir -Filter "$(sanitary_path $app).json" -Recurse -File -ErrorAction Ignore | Select-Object -First 1
+    if (!$manifestFile) {
+        warn "Could not find manifest for '$app' in bucket '$bucket'."
+        return $null
+    }
+
+    return @{
+        Root                 = $bucketDir
+        RelativeManifestPath = (Get-RelativePath $bucketDir $manifestFile.FullName) -replace '\\', '/'
+    }
+}
+
+function Find-HistoricalManifestInGit($app, $bucket, $requestedVersion) {
+    if (!(get_config USE_GIT_HISTORY $true)) {
+        return $null
+    }
+
+    if (!$bucket) {
+        return $null
+    }
+
+    $gitPath = Get-ManifestGitPath $app $bucket
+    if (!$gitPath) {
+        return $null
+    }
+    $bucketDir = $gitPath.Root
+    $relativeManifestPath = $gitPath.RelativeManifestPath
 
     try {
         # HEAD fast-path: skip pickaxe if HEAD already has the requested version.
@@ -272,6 +296,75 @@ function Find-HistoricalManifestInGit($app, $bucket, $requestedVersion) {
         }
         return $null
     } catch { return $null }
+}
+
+function Find-HistoricalVersionsInGit($app, $bucket) {
+    # Enumerate every version the manifest has had in the bucket's Git history.
+    if (!(get_config USE_GIT_HISTORY $true)) {
+        return @()
+    }
+
+    if (!$bucket) {
+        return @()
+    }
+
+    if (!(Test-GitAvailable)) {
+        warn 'Git is not available. Cannot search historical versions.'
+        return @()
+    }
+
+    $gitPath = Get-ManifestGitPath $app $bucket
+    if (!$gitPath) {
+        return @()
+    }
+
+    # A single log with diffs is much faster than running 'git show' per commit.
+    $commitMarker = '__SCOOP_MANIFEST_COMMIT__'
+    $log = Invoke-Git -Path $gitPath.Root -ArgumentList @(
+        '--no-pager', 'log', '--follow', '--no-color', '-U0', '-p',
+        '--date=format-local:%Y-%m-%d %H:%M:%S',
+        "--format=$commitMarker%h%x1f%cd%x1f%s", '--', $gitPath.RelativeManifestPath
+    )
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "git log failed for '$app' in bucket '$bucket' (exit code $exitCode)."
+    }
+
+    $versions = [System.Collections.Generic.List[Object]]::new()
+    $seen = [System.Collections.Generic.HashSet[String]]::new([System.StringComparer]::Ordinal)
+    $currentCommit = $null
+    $versionRecorded = $false
+
+    foreach ($line in @($log)) {
+        if ($line.StartsWith($commitMarker, [System.StringComparison]::Ordinal)) {
+            $fields = $line.Substring($commitMarker.Length) -split ([Char]31), 3
+            if ($fields.Count -lt 2) {
+                $currentCommit = $null
+                continue
+            }
+            $currentCommit = $fields
+            $versionRecorded = $false
+            continue
+        }
+
+        if (!$currentCommit -or $versionRecorded) { continue }
+
+        # Only added lines are inspected: the version is recorded once per commit,
+        # newest first, so the first occurrence is the commit that set that version.
+        if ($line -match '^\+\s*"version"\s*:\s*"([^"]+)"') {
+            $version = $Matches[1]
+            if ($seen.Add($version)) {
+                $versions.Add([PSCustomObject]@{
+                        Version = $version
+                        Commit  = $currentCommit[0]
+                        Updated = $currentCommit[1]
+                    })
+            }
+            $versionRecorded = $true
+        }
+    }
+
+    return $versions.ToArray()
 }
 
 function Find-HistoricalManifest($app, $bucket, $version) {

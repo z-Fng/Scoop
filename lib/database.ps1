@@ -407,6 +407,57 @@ function Get-ScoopDBItem {
 
 <#
 .SYNOPSIS
+    Get all cached versions of an app.
+.DESCRIPTION
+    Return the distinct versions stored for an app and bucket in reverse cache
+    insertion order (newest cache entry first). The caller is responsible for
+    any other ordering and for checking that the database is readable before
+    calling this function.
+.PARAMETER Name
+    System.String
+    The name of the app.
+.PARAMETER Bucket
+    System.String
+    The bucket of the app.
+.INPUTS
+    None
+.OUTPUTS
+    System.String[]
+    The cached version strings.
+#>
+function Get-ScoopDBVersions {
+    [CmdletBinding()]
+    [OutputType([String[]])]
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [String]
+        $Name,
+        [Parameter(Mandatory = $true, Position = 1)]
+        [String]
+        $Bucket
+    )
+
+    $db = Open-ScoopDB
+    $dbAdapter = New-Object -TypeName System.Data.SQLite.SQLiteDataAdapter
+    $result = New-Object System.Data.DataTable
+    $dbCommand = $db.CreateCommand()
+    $dbCommand.CommandText = 'SELECT version FROM app WHERE name = @Name AND bucket = @Bucket GROUP BY version ORDER BY MIN(rowid) DESC'
+    $dbCommand.CommandType = [System.Data.CommandType]::Text
+    [void]$dbCommand.Parameters.AddWithValue('@Name', $Name)
+    [void]$dbCommand.Parameters.AddWithValue('@Bucket', $Bucket)
+    $dbAdapter.SelectCommand = $dbCommand
+    try {
+        [void]$dbAdapter.Fill($result)
+        return @($result.Rows | ForEach-Object { [String]$_['version'] })
+    } finally {
+        $dbCommand.Dispose()
+        $dbAdapter.Dispose()
+        $db.Dispose()
+    }
+}
+
+<#
+.SYNOPSIS
     Get the latest row(s) from a set of Scoop database rows.
 .DESCRIPTION
     Compares the `version` property of each row semantically and returns the latest row.

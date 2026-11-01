@@ -80,6 +80,27 @@ function buckets {
     return Get-LocalBucket
 }
 
+<#
+.SYNOPSIS
+    Resolve a bucket name to its local directory name.
+.DESCRIPTION
+    Bucket names are case-insensitive on Windows. Return the matching local
+    bucket name, or the input when no local bucket matches.
+.PARAMETER Name
+    System.String
+    The bucket name to resolve.
+.OUTPUTS
+    System.String
+    The local bucket name, or the original input.
+#>
+function Resolve-BucketName($Name) {
+    if ([String]::IsNullOrWhiteSpace($Name)) { return $Name }
+
+    $resolved = Get-LocalBucket | Where-Object { $_ -eq $Name } | Select-Object -First 1
+    if ($resolved) { return $resolved }
+    return $Name
+}
+
 function Convert-RepositoryUri {
     [CmdletBinding()]
     param (
